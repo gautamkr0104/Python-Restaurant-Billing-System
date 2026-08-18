@@ -2,238 +2,28 @@
 """
 🍽️  Python Restaurant Billing System
 A feature-rich terminal-based restaurant billing application.
+
+Entry point — run this file to start the application.
 """
 
-import os
 import sys
-import datetime
-from collections import OrderedDict
+
+from config import Colors
+from menu import MENU, FLAT_MENU
+from order import Order
+from ui import (
+    clear_screen, pause, fmt, print_header,
+    print_divider, veg_label, get_valid_input,
+)
 
 
-# ──────────────────────────────────────────────
-#  ANSI Color Codes for Terminal Styling
-# ──────────────────────────────────────────────
-class Colors:
-    RESET   = "\033[0m"
-    BOLD    = "\033[1m"
-    DIM     = "\033[2m"
-    UNDERLINE = "\033[4m"
-
-    RED     = "\033[31m"
-    GREEN   = "\033[32m"
-    YELLOW  = "\033[33m"
-    BLUE    = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN    = "\033[36m"
-    WHITE   = "\033[37m"
-
-    BG_RED    = "\033[41m"
-    BG_GREEN  = "\033[42m"
-    BG_YELLOW = "\033[43m"
-    BG_BLUE   = "\033[44m"
-    BG_CYAN   = "\033[46m"
-
-
-# ──────────────────────────────────────────────
-#  Menu Database
-# ──────────────────────────────────────────────
-MENU = OrderedDict({
-    "🍟 Appetizers & Starters": {
-        "spring rolls":       {"price": 120, "veg": True},
-        "garlic bread":       {"price": 90,  "veg": True},
-        "chicken wings":      {"price": 180, "veg": False},
-        "bruschetta":         {"price": 100, "veg": True},
-    },
-    "🍕 Main Course": {
-        "margherita pizza":   {"price": 250, "veg": True},
-        "pepperoni pizza":    {"price": 300, "veg": False},
-        "pasta carbonara":    {"price": 220, "veg": False},
-        "grilled chicken":    {"price": 280, "veg": False},
-        "paneer tikka":       {"price": 200, "veg": True},
-        "butter chicken":     {"price": 320, "veg": False},
-        "veg biryani":        {"price": 180, "veg": True},
-        "chicken biryani":    {"price": 250, "veg": False},
-    },
-    "🍔 Burgers & Sandwiches": {
-        "classic burger":     {"price": 150, "veg": False},
-        "veggie burger":      {"price": 130, "veg": True},
-        "club sandwich":      {"price": 170, "veg": False},
-        "grilled cheese":     {"price": 110, "veg": True},
-    },
-    "🥗 Salads & Soups": {
-        "caesar salad":       {"price": 140, "veg": False},
-        "greek salad":        {"price": 130, "veg": True},
-        "tomato soup":        {"price": 90,  "veg": True},
-        "corn soup":          {"price": 80,  "veg": True},
-    },
-    "🍰 Desserts": {
-        "chocolate cake":     {"price": 180, "veg": True},
-        "cheesecake":         {"price": 200, "veg": True},
-        "ice cream sundae":   {"price": 120, "veg": True},
-        "gulab jamun":        {"price": 80,  "veg": True},
-    },
-    "☕ Beverages": {
-        "espresso":           {"price": 90,  "veg": True},
-        "cappuccino":         {"price": 110, "veg": True},
-        "fresh lime soda":    {"price": 60,  "veg": True},
-        "mango shake":        {"price": 80,  "veg": True},
-        "iced tea":           {"price": 70,  "veg": True},
-        "water bottle":       {"price": 30,  "veg": True},
-    },
-})
-
-# Flat lookup dict for quick search by name
-FLAT_MENU = {}
-for category, items in MENU.items():
-    for item_name, item_info in items.items():
-        FLAT_MENU[item_name] = {**item_info, "category": category}
-
-# Available discount codes: code -> percentage
-DISCOUNT_CODES = {
-    "WELCOME10":  10,
-    "SAVE20":     20,
-    "FLAT50":     50,
-    "STUDENT":    15,
-    "VIP":        25,
-}
-
-TAX_RATE = 0.05  # 5% GST
-SERVICE_CHARGE_RATE = 0.10  # 10% service charge
-
-
-# ──────────────────────────────────────────────
-#  Utility Helpers
-# ──────────────────────────────────────────────
-def clear_screen():
-    os.system("cls" if os.name == "nt" else "clear")
-
-
-def pause():
-    input(f"\n{Colors.DIM}Press Enter to continue...{Colors.RESET}")
-
-
-def fmt(amount):
-    """Format currency value."""
-    return f"₹{amount:,.2f}"
-
-
-def print_header(title):
-    width = 60
-    print()
-    print(f"{Colors.CYAN}{Colors.BOLD}{'═' * width}{Colors.RESET}")
-    print(f"{Colors.CYAN}{Colors.BOLD}{title:^{width}}{Colors.RESET}")
-    print(f"{Colors.CYAN}{Colors.BOLD}{'═' * width}{Colors.RESET}")
-    print()
-
-
-def print_divider(char="─", color=Colors.DIM):
-    print(f"{color}{char * 60}{Colors.RESET}")
-
-
-def veg_label(is_veg):
-    if is_veg:
-        return f"{Colors.GREEN}🟢 VEG{Colors.RESET}"
-    return f"{Colors.RED}🔴 NON-VEG{Colors.RESET}"
-
-
-def get_valid_input(prompt, input_type=str, valid=None, error_msg="Invalid input"):
-    """Generic input validator."""
-    while True:
-        try:
-            raw = input(prompt).strip()
-            if not raw:
-                continue
-            value = input_type(raw)
-            if valid and value not in valid:
-                print(f"  {Colors.RED}✗ {error_msg}{Colors.RESET}")
-                continue
-            return value
-        except (ValueError, TypeError):
-            print(f"  {Colors.RED}✗ {error_msg}{Colors.RESET}")
-
-
-# ──────────────────────────────────────────────
-#  Order Class
-# ──────────────────────────────────────────────
-class OrderItem:
-    def __init__(self, name, price, quantity, is_veg):
-        self.name = name
-        self.price = price
-        self.quantity = quantity
-        self.is_veg = is_veg
-
-    @property
-    def total(self):
-        return self.price * self.quantity
-
-    def __repr__(self):
-        return f"OrderItem({self.name!r}, qty={self.quantity})"
-
-
-class Order:
-    def __init__(self, table_number):
-        self.table_number = table_number
-        self.items: list[OrderItem] = []
-        self.discount_code = None
-        self.discount_percent = 0
-        self.timestamp = datetime.datetime.now()
-
-    def add_item(self, name, price, quantity, is_veg):
-        # Check if item already in order -> increase qty
-        for item in self.items:
-            if item.name == name:
-                item.quantity += quantity
-                return
-        self.items.append(OrderItem(name, price, quantity, is_veg))
-
-    def remove_item(self, index):
-        if 0 <= index < len(self.items):
-            return self.items.pop(index)
-        return None
-
-    def apply_discount(self, code):
-        code_upper = code.upper()
-        if code_upper in DISCOUNT_CODES:
-            self.discount_code = code_upper
-            self.discount_percent = DISCOUNT_CODES[code_upper]
-            return True
-        return False
-
-    @property
-    def subtotal(self):
-        return sum(item.total for item in self.items)
-
-    @property
-    def discount_amount(self):
-        return self.subtotal * (self.discount_percent / 100)
-
-    @property
-    def after_discount(self):
-        return self.subtotal - self.discount_amount
-
-    @property
-    def tax(self):
-        return self.after_discount * TAX_RATE
-
-    @property
-    def service_charge(self):
-        return self.after_discount * SERVICE_CHARGE_RATE
-
-    @property
-    def grand_total(self):
-        return self.after_discount + self.tax + self.service_charge
-
-    def is_empty(self):
-        return len(self.items) == 0
-
-
-# ──────────────────────────────────────────────
-#  Core Application
-# ──────────────────────────────────────────────
 class RestaurantApp:
+    """Main application controller that orchestrates the restaurant flow."""
+
     def __init__(self):
         self.order_history: list[dict] = []
 
+    # ─── Banner ───────────────────────────────
     def show_banner(self):
         clear_screen()
         banner = f"""
@@ -248,6 +38,7 @@ class RestaurantApp:
 {Colors.RESET}"""
         print(banner)
 
+    # ─── Menu Display ─────────────────────────
     def show_menu(self):
         print_header("📋  OUR MENU")
         for category, items in MENU.items():
@@ -259,6 +50,7 @@ class RestaurantApp:
                 print(f"    {Colors.CYAN}{name:<22}{Colors.RESET}  {price_str:>8}   {veg}")
             print()
 
+    # ─── Table Selection ──────────────────────
     def get_table_number(self):
         print(f"  {Colors.BOLD}Table Number:{Colors.RESET}")
         print(f"    {Colors.DIM}Enter a number (1-50) or 'walk-in' for takeaway{Colors.RESET}")
@@ -274,6 +66,7 @@ class RestaurantApp:
             except ValueError:
                 print(f"    {Colors.RED}✗ Invalid input. Enter a number or 'walk-in'.{Colors.RESET}")
 
+    # ─── Search ───────────────────────────────
     def search_menu(self, query):
         query_lower = query.lower()
         results = []
@@ -282,6 +75,7 @@ class RestaurantApp:
                 results.append((name, info))
         return results
 
+    # ─── Adding Items ─────────────────────────
     def add_items_to_order(self, order: Order):
         while True:
             print(f"\n  {Colors.BOLD}Add an item:{Colors.RESET}")
@@ -320,6 +114,7 @@ class RestaurantApp:
             else:
                 print(f"  {Colors.RED}✗ Item '{user_input}' not found. Try 'search {user_input}' or check the menu.{Colors.RESET}")
 
+    # ─── View Order ───────────────────────────
     def view_current_order(self, order: Order):
         if order.is_empty():
             print(f"\n  {Colors.YELLOW}⚠ No items in order yet.{Colors.RESET}")
@@ -342,6 +137,7 @@ class RestaurantApp:
         print(f"  {Colors.BOLD}{Colors.CYAN}GRAND TOTAL:{Colors.RESET:>35} {Colors.BOLD}{fmt(order.grand_total):>10}{Colors.RESET}")
         print()
 
+    # ─── Modify Order ─────────────────────────
     def modify_order(self, order: Order):
         if order.is_empty():
             print(f"\n  {Colors.YELLOW}⚠ No items to modify.{Colors.RESET}")
@@ -364,7 +160,10 @@ class RestaurantApp:
         except ValueError:
             print(f"  {Colors.RED}✗ Invalid input.{Colors.RESET}")
 
+    # ─── Discount ─────────────────────────────
     def apply_discount(self, order: Order):
+        from config import DISCOUNT_CODES
+
         print(f"\n  {Colors.BOLD}Apply Discount Code{Colors.RESET}")
         print(f"  {Colors.DIM}Available codes: {', '.join(DISCOUNT_CODES.keys())}{Colors.RESET}")
         code = input(f"  {Colors.CYAN}→ Enter code: {Colors.RESET}").strip()
@@ -375,6 +174,7 @@ class RestaurantApp:
         else:
             print(f"  {Colors.RED}✗ Invalid discount code.{Colors.RESET}")
 
+    # ─── Payment ──────────────────────────────
     def process_payment(self, order: Order):
         print_header("💳  PAYMENT")
         print(f"  {Colors.BOLD}Amount Due: {Colors.CYAN}{fmt(order.grand_total)}{Colors.RESET}")
@@ -426,6 +226,7 @@ class RestaurantApp:
 
         return selected
 
+    # ─── Receipt ──────────────────────────────
     def print_receipt(self, order: Order, payment_method: str):
         clear_screen()
         print_header("🧾  RECEIPT")
@@ -502,6 +303,7 @@ class RestaurantApp:
         except IOError:
             print(f"\n  {Colors.YELLOW}⚠ Could not save receipt to file.{Colors.RESET}")
 
+    # ─── New Order Flow ───────────────────────
     def start_new_order(self):
         clear_screen()
         print_header("🆕  NEW ORDER")
@@ -572,6 +374,7 @@ class RestaurantApp:
                     print(f"  {Colors.YELLOW}Order cancelled.{Colors.RESET}")
                     break
 
+    # ─── Order History ────────────────────────
     def view_order_history(self):
         if not self.order_history:
             print(f"\n  {Colors.YELLOW}⚠ No order history yet.{Colors.RESET}")
@@ -589,6 +392,7 @@ class RestaurantApp:
         print_divider("═", Colors.CYAN)
         print(f"  {Colors.BOLD}Total Orders: {len(self.order_history)}  |  Total Revenue: {fmt(total_revenue)}{Colors.RESET}")
 
+    # ─── Main Loop ────────────────────────────
     def run(self):
         """Main application loop."""
         self.show_banner()
